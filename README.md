@@ -1,3 +1,22 @@
+# ubuntu 22下编译
+## 安装依赖
+### ros_numpy
+```shell
+git clone https://github.com/eric-wieser/ros_numpy.git
+cd ros_numpy
+pip install .
+```
+### Open3D
+```shell
+pip install open3d
+```
+### numpy
+open3d 需要用 1.x版本的numpy
+```shell
+pip uninstall numpy
+pip install numpy==1.25.0
+```
+---
 # FAST-LIO-LOCALIZATION
 
 A simple localization framework that can re-localize in built maps based on [FAST-LIO](https://github.com/hku-mars/FAST_LIO). 

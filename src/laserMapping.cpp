@@ -71,6 +71,7 @@ double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot4[MAXN], s_pl
 double match_time = 0, solve_time = 0, solve_const_H_time = 0;
 int    kdtree_size_st = 0, kdtree_size_end = 0, add_point_size = 0, kdtree_delete_counter = 0;
 bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false;
+int pcd_save_interval = -1, pcd_index = 0;
 /**************************/
 
 float res_last[100000] = {0.0};
@@ -483,15 +484,31 @@ void publish_frame_world(const ros::Publisher & pubLaserCloudFull)
     if (pcd_save_en)
     {
         int size = feats_undistort->points.size();
-        PointCloudXYZI::Ptr laserCloudWorld( \
-                        new PointCloudXYZI(size, 1));
+        PointCloudXYZI::Ptr laserCloudWorld(
+            new PointCloudXYZI(size, 1));
 
         for (int i = 0; i < size; i++)
         {
-            RGBpointBodyToWorld(&feats_undistort->points[i], \
-                                &laserCloudWorld->points[i]);
+            pointBodyToWorld(&feats_undistort->points[i],
+                             &laserCloudWorld->points[i]);
         }
-        *pcl_wait_save += *laserCloudWorld;
+
+        static int scan_wait_num = 0;
+        scan_wait_num++;
+
+        if (scan_wait_num % 4 == 0)
+            *pcl_wait_save += *laserCloudWorld;
+
+        if (pcl_wait_save->size() > 0 && pcd_save_interval > 0 && scan_wait_num >= pcd_save_interval)
+        {
+            pcd_index++;
+            string all_points_dir(string(string(ROOT_DIR) + "PCD/scans_") + to_string(pcd_index) + string(".pcd"));
+            pcl::PCDWriter pcd_writer;
+            cout << "current scan saved to /PCD/" << all_points_dir << endl;
+            pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
+            pcl_wait_save->clear();
+            scan_wait_num = 0;
+        }
     }
 }
 
@@ -556,8 +573,7 @@ void publish_odometry(const ros::Publisher & pubOdomAftMapped)
 {
     odomAftMapped.header.frame_id = "camera_init";
     odomAftMapped.child_frame_id = "body";
-//    odomAftMapped.header.stamp = ros::Time().fromSec(lidar_end_time);// ros::Time().fromSec(lidar_end_time);
-    odomAftMapped.header.stamp = ros::Time::now();// ros::Time().fromSec(lidar_end_time);
+    odomAftMapped.header.stamp = ros::Time().fromSec(lidar_end_time);// ros::Time().fromSec(lidar_end_time);
     set_posestamp(odomAftMapped.pose);
     pubOdomAftMapped.publish(odomAftMapped);
     auto P = kf.get_P();
@@ -583,9 +599,7 @@ void publish_odometry(const ros::Publisher & pubOdomAftMapped)
     q.setY(odomAftMapped.pose.pose.orientation.y);
     q.setZ(odomAftMapped.pose.pose.orientation.z);
     transform.setRotation( q );
-    // TODO 这里使用当前时间发布tf 否则当livox时间不正确时无法正常tf
-//    br.sendTransform( tf::StampedTransform( transform, odomAftMapped.header.stamp, "camera_init", "body" ) );
-    br.sendTransform( tf::StampedTransform( transform, ros::Time::now(), "camera_init", "body" ) );
+    br.sendTransform( tf::StampedTransform( transform, odomAftMapped.header.stamp, "camera_init", "body" ) );
 }
 
 void publish_path(const ros::Publisher pubPath)
@@ -738,7 +752,8 @@ int main(int argc, char** argv)
     nh.param<int>("point_filter_num", p_pre->point_filter_num, 2);
     nh.param<bool>("feature_extract_enable", p_pre->feature_enabled, 0);
     nh.param<bool>("runtime_pos_log_enable", runtime_pos_log, 0);
-    nh.param<bool>("pcd_save_enable", pcd_save_en, 0);
+    nh.param<bool>("pcd_save/pcd_save_en", pcd_save_en, 0);
+    nh.param<int>("pcd_save/interval", pcd_save_interval, -1);
     nh.param<vector<double>>("mapping/extrinsic_T", extrinT, vector<double>());
     nh.param<vector<double>>("mapping/extrinsic_R", extrinR, vector<double>());
     cout<<"p_pre->lidar_type "<<p_pre->lidar_type<<endl;
@@ -966,13 +981,24 @@ int main(int argc, char** argv)
     /**************** save map ****************/
     /* 1. make sure you have enough memories
     /* 2. pcd save will largely influence the real-time performences **/
-    if (pcl_wait_save->size() > 0 && pcd_save_en)
+   if (pcl_wait_save->size() > 0 && pcd_save_en)
     {
-        string file_name = string("scans.pcd");
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+        for (size_t i = 1; i <= pcd_index; i++)
+        {
+            pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_temp(new pcl::PointCloud<pcl::PointXYZ>);
+            string all_points_dir(string(string(ROOT_DIR) + "PCD/scans_") + to_string(i) + string(".pcd"));
+            pcl::PCDReader reader;
+            reader.read(all_points_dir, *cloud_temp);
+            *cloud = *cloud + *cloud_temp;
+        }
+
+        string file_name = string("GlobalMap.pcd");
         string all_points_dir(string(string(ROOT_DIR) + "PCD/") + file_name);
         pcl::PCDWriter pcd_writer;
-        cout << "current scan saved to /PCD/" << file_name<<endl;
-        pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
+        cout << "ROOT_DIR: " << ROOT_DIR << endl;
+        cout << "current scan saved to /PCD/" << file_name << endl;
+        pcd_writer.writeBinary(all_points_dir, *cloud);
     }
 
     fout_out.close();
