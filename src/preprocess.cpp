@@ -136,10 +136,14 @@ void Preprocess::avia_handler(const livox_ros_driver::CustomMsg::ConstPtr &msg)
   }
   else
   {
+    uint8_t mask = 0x30;
+    if (only_use_high_confidenc_point) {
+      mask = 0x3F;
+    }    
     for(uint i=1; i<plsize; i++)
     {
       // 根据tag值获取雨雾灰尘、相近物体间的粘连点云高置信的点，详见mid360手册
-      if((msg->points[i].line < N_SCANS) && ((msg->points[i].tag & 0x3F) == 0x10 || (msg->points[i].tag & 0x3F) == 0x00))
+      if((msg->points[i].line < N_SCANS) && ((msg->points[i].tag & mask) == 0x10 || (msg->points[i].tag & mask) == 0x00))
       {
         valid_num ++;
         if (valid_num % point_filter_num == 0)

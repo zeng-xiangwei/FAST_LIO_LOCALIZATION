@@ -98,6 +98,7 @@ class Preprocess
   double blind;
   double max_scan_range;
   bool feature_enabled, given_offset_time;
+  bool only_use_high_confidenc_point;
   ros::Publisher pub_full, pub_surf, pub_corn;
     
 
