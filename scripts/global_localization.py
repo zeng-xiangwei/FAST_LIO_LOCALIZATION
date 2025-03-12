@@ -219,7 +219,8 @@ if __name__ == '__main__':
     LOCALIZATION_TH = 0.95
 
     # FOV(rad), modify this according to your LiDAR type
-    FOV = 1.6
+    # FOV = 1.6
+    FOV = 3.14 * 2
 
     # The farthest distance(meters) within FOV
     FOV_FAR = 150

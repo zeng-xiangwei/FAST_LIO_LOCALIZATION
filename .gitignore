@@ -5,6 +5,6 @@ Log/*.csv
 Log/*.pdf
 .vscode/c_cpp_properties.json
 .vscode/settings.json
-PCD/*.pcd
+PCD/*
 .idea
 cmake-build-debug
