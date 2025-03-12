@@ -59,6 +59,7 @@
 #include <livox_ros_driver/CustomMsg.h>
 #include "preprocess.h"
 #include <ikd-Tree/ikd_Tree.h>
+#include "utils/point_cloud_3d_to_2d_grid.h"
 
 #define INIT_TIME           (0.1)
 #define LASER_POINT_COV     (0.001)
@@ -71,7 +72,8 @@ double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot4[MAXN], s_pl
 double match_time = 0, solve_time = 0, solve_const_H_time = 0;
 int    kdtree_size_st = 0, kdtree_size_end = 0, add_point_size = 0, kdtree_delete_counter = 0;
 bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false;
-int pcd_save_interval = -1, pcd_index = 0;
+int pcd_save_interval = -1, pcd_index = 0, pcd_skip_num = 4;
+float grid_2d_z_min = -0.2, grid_2d_z_max = 0.5, grid_2d_resolution = 0.05;
 /**************************/
 
 float res_last[100000] = {0.0};
@@ -496,7 +498,7 @@ void publish_frame_world(const ros::Publisher & pubLaserCloudFull)
         static int scan_wait_num = 0;
         scan_wait_num++;
 
-        if (scan_wait_num % 4 == 0)
+        if (scan_wait_num % pcd_skip_num == 0)
             *pcl_wait_save += *laserCloudWorld;
 
         if (pcl_wait_save->size() > 0 && pcd_save_interval > 0 && scan_wait_num >= pcd_save_interval)
@@ -754,8 +756,12 @@ int main(int argc, char** argv)
     nh.param<bool>("runtime_pos_log_enable", runtime_pos_log, 0);
     nh.param<bool>("pcd_save/pcd_save_en", pcd_save_en, 0);
     nh.param<int>("pcd_save/interval", pcd_save_interval, -1);
+    nh.param<int>("pcd_save/skip_num", pcd_skip_num, 4);
     nh.param<vector<double>>("mapping/extrinsic_T", extrinT, vector<double>());
     nh.param<vector<double>>("mapping/extrinsic_R", extrinR, vector<double>());
+    nh.param<float>("pcd_save/grid_2d_z_min", grid_2d_z_min, -0.2);
+    nh.param<float>("pcd_save/grid_2d_z_max", grid_2d_z_max, 0.5);
+    nh.param<float>("pcd_save/grid_2d_resolution", grid_2d_resolution, 0.05);
     cout<<"p_pre->lidar_type "<<p_pre->lidar_type<<endl;
     
     path.header.stamp    = ros::Time::now();
@@ -993,12 +999,24 @@ int main(int argc, char** argv)
             *cloud = *cloud + *cloud_temp;
         }
 
+        if (pcl_wait_save->size() > 0) {
+            for (size_t i = 0; i < pcl_wait_save->size(); i++) {
+                pcl::PointXYZ tmp{pcl_wait_save->points[i].x, pcl_wait_save->points[i].y, pcl_wait_save->points[i].z};
+                cloud->push_back(tmp);
+            }
+        }
+
         string file_name = string("GlobalMap.pcd");
         string all_points_dir(string(string(ROOT_DIR) + "PCD/") + file_name);
         pcl::PCDWriter pcd_writer;
         cout << "ROOT_DIR: " << ROOT_DIR << endl;
         cout << "current scan saved to /PCD/" << file_name << endl;
         pcd_writer.writeBinary(all_points_dir, *cloud);
+
+        // 导出栅格地图
+        utils::PointCloud3DTo2DGrid pointCloud3DTo2DGrid;
+        pointCloud3DTo2DGrid.Convert(cloud, string(string(ROOT_DIR) + "PCD/"), "map_2d", grid_2d_z_min, 
+            grid_2d_z_max, grid_2d_resolution);
     }
 
     fout_out.close();
