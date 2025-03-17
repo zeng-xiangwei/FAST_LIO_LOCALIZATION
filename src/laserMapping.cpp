@@ -96,12 +96,16 @@ int    iterCount = 0, feats_down_size = 0, NUM_MAX_ITERATIONS = 0, laserCloudVal
 bool   point_selected_surf[100000] = {0};
 bool   lidar_pushed, flg_reset, flg_exit = false, flg_EKF_inited;
 bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
+bool output_car_body_pose_en = false;
 
 vector<vector<int>>  pointSearchInd_surf; 
 vector<BoxPointType> cub_needrm;
 vector<PointVector>  Nearest_Points; 
 vector<double>       extrinT(3, 0.0);
 vector<double>       extrinR(9, 0.0);
+
+vector<double>       extrin_carbody_lidar_t(3, 0.0);
+vector<double>       extrin_carbody_lidar_r(9, 0.0);
 deque<double>                     time_buffer;
 deque<PointCloudXYZI::Ptr>        lidar_buffer;
 deque<sensor_msgs::Imu::ConstPtr> imu_buffer;
@@ -126,6 +130,9 @@ V3D euler_cur;
 V3D position_last(Zero3d);
 V3D Lidar_T_wrt_IMU(Zero3d);
 M3D Lidar_R_wrt_IMU(Eye3d);
+// T^{carbody}_{lidar}
+V3D translation_carbody_lidar(Zero3d);
+M3D rotation_carbody_lidar(Eye3d);
 
 /*** EKF inputs and output ***/
 MeasureGroup Measures;
@@ -571,12 +578,43 @@ void set_posestamp(T & out)
     
 }
 
+template<typename T>
+void set_poses_on_body_frame(T & out)
+{
+    Eigen::Isometry3d T_w_imu;
+    T_w_imu.translation() = state_point.pos;
+    T_w_imu.linear() = state_point.rot.toRotationMatrix();
+
+    Eigen::Isometry3d T_imu_lidar;
+    T_imu_lidar.translation() = state_point.offset_T_L_I;
+    T_imu_lidar.linear() = state_point.rot.toRotationMatrix();
+
+    Eigen::Isometry3d T_body_lidar;
+    T_body_lidar.translation() = translation_carbody_lidar;
+    T_body_lidar.linear() = state_point.rot.toRotationMatrix();
+
+    Eigen::Isometry3d T_w_body = T_w_imu * T_imu_lidar * T_body_lidar.inverse();
+    out.pose.position.x = T_w_body.translation().x();
+    out.pose.position.y = T_w_body.translation().y();
+    out.pose.position.z = T_w_body.translation().z();
+    Eigen::Quaterniond q_w_body(T_w_body.linear());
+    out.pose.orientation.x = q_w_body.x();
+    out.pose.orientation.y = q_w_body.y();
+    out.pose.orientation.z = q_w_body.z();
+    out.pose.orientation.w = q_w_body.w();
+    
+}
+
 void publish_odometry(const ros::Publisher & pubOdomAftMapped)
 {
     odomAftMapped.header.frame_id = "camera_init";
     odomAftMapped.child_frame_id = "body";
     odomAftMapped.header.stamp = ros::Time().fromSec(lidar_end_time);// ros::Time().fromSec(lidar_end_time);
-    set_posestamp(odomAftMapped.pose);
+    if (output_car_body_pose_en) {
+        set_poses_on_body_frame(odomAftMapped.pose);
+    } else {
+        set_posestamp(odomAftMapped.pose);
+    }
     pubOdomAftMapped.publish(odomAftMapped);
     auto P = kf.get_P();
     for (int i = 0; i < 6; i ++)
@@ -732,6 +770,9 @@ int main(int argc, char** argv)
     nh.param<bool>("publish/scan_publish_en",scan_pub_en,1);
     nh.param<bool>("publish/dense_publish_en",dense_pub_en,1);
     nh.param<bool>("publish/scan_bodyframe_pub_en",scan_body_pub_en,1);
+    nh.param<bool>("publish/output_car_body_pose_en",output_car_body_pose_en,0);
+    nh.param<vector<double>>("publish/extrinsic_carbody_lidar_T", extrin_carbody_lidar_t, vector<double>());
+    nh.param<vector<double>>("publish/extrinsic_carbody_lidar_R", extrin_carbody_lidar_r, vector<double>());
     nh.param<int>("max_iteration",NUM_MAX_ITERATIONS,4);
     nh.param<string>("map_file_path",map_file_path,"");
     nh.param<string>("common/lid_topic",lid_topic,"/livox/lidar");
@@ -792,6 +833,9 @@ int main(int argc, char** argv)
     p_imu->set_acc_cov(V3D(acc_cov, acc_cov, acc_cov));
     p_imu->set_gyr_bias_cov(V3D(b_gyr_cov, b_gyr_cov, b_gyr_cov));
     p_imu->set_acc_bias_cov(V3D(b_acc_cov, b_acc_cov, b_acc_cov));
+
+    translation_carbody_lidar << VEC_FROM_ARRAY(extrin_carbody_lidar_t);
+    rotation_carbody_lidar << MAT_FROM_ARRAY(extrin_carbody_lidar_t);
 
     double epsi[23] = {0.001};
     fill(epsi, epsi+23, 0.001);

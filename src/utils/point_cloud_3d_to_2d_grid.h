@@ -36,10 +36,14 @@ public:
         std::cout << "x_min: " << x_min << ", x_max: " << x_max << ", y_min: " << y_min << ", y_max: " << y_max << std::endl;
 
         // 将提取的点云投影到栅格地图中, 按行写入到文件, 并导出pgm图片以及yaml参数
-        int x_length = std::floor((x_max - x_min) / resolution);
-        int y_length = std::floor((y_max - y_min) / resolution);
+        // 以包围框的左上角为起点，resolution为像素长度，做一张图片
+        // 需要计算一下这个图片的左下角的坐标，作为origin的值，不是直接拿包围框的左下角，因为不是一个完整的像素
+        // kPaddingPixel的作用是让图片比包围框大
+        const int kPaddingPixel = 5;
+        int x_length = std::floor((x_max - x_min) / resolution) + kPaddingPixel;
+        int y_length = std::floor((y_max - y_min) / resolution) + kPaddingPixel;
         char occupied_value = 0, free_value = 255;
-        std::vector<std::vector<char>> grid_image_map(y_length + 1, std::vector<char>(x_length + 1, free_value));
+        std::vector<std::vector<char>> grid_image_map(y_length, std::vector<char>(x_length, free_value));
         for (int i = 0; i < cloud_filtered.points.size(); i++) {
             int x_index = std::floor((cloud_filtered.points[i].x - x_min) / resolution);
             int y_index = std::floor((y_max - cloud_filtered.points[i].y) / resolution);
@@ -67,7 +71,8 @@ public:
             }
         }
 
-        const Eigen::Vector2d origin(x_min, y_min);
+        // 因为是按照包围框的左上角画栅格图，因此左下角的x=x_min，y要取左下角的像素坐标（像素的左下角）
+        const Eigen::Vector2d origin(x_min, y_max - y_length * resolution);
 
         // 导出yaml
         StreamFileWriter yaml_writer(map_filestem + ".yaml");

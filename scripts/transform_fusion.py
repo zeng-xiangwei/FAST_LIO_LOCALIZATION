@@ -64,6 +64,36 @@ def cb_save_cur_odom(odom_msg):
     global cur_odom_to_baselink
     cur_odom_to_baselink = odom_msg
 
+    br = tf.TransformBroadcaster()
+
+    global cur_map_to_odom
+    if cur_map_to_odom is not None:
+        T_map_to_odom = pose_to_mat(cur_map_to_odom)
+    else:
+        T_map_to_odom = np.eye(4)
+
+    br.sendTransform(tf.transformations.translation_from_matrix(T_map_to_odom),
+                        tf.transformations.quaternion_from_matrix(T_map_to_odom),
+                        rospy.Time.now(),
+                        'camera_init', 'map')
+    if cur_odom_to_baselink is not None:
+        # 发布全局定位的odometry
+        localization = Odometry()
+        T_odom_to_base_link = pose_to_mat(cur_odom_to_baselink)
+        # 这里T_map_to_odom短时间内变化缓慢 暂时不考虑与T_odom_to_base_link时间同步
+        T_map_to_base_link = np.matmul(T_map_to_odom, T_odom_to_base_link)
+        xyz = tf.transformations.translation_from_matrix(T_map_to_base_link)
+        quat = tf.transformations.quaternion_from_matrix(T_map_to_base_link)
+        localization.pose.pose = Pose(Point(*xyz), Quaternion(*quat))
+        localization.twist = cur_odom_to_baselink.twist
+
+        localization.header.stamp = cur_odom_to_baselink.header.stamp
+        localization.header.frame_id = 'map'
+        localization.child_frame_id = 'body'
+        # rospy.loginfo_throttle(1, '{}'.format(np.matmul(T_map_to_odom, T_odom_to_base_link)))
+        pub_localization.publish(localization)
+
+
 
 def cb_save_map_to_odom(odom_msg):
     global cur_map_to_odom
@@ -83,6 +113,6 @@ if __name__ == '__main__':
     pub_localization = rospy.Publisher('/localization', Odometry, queue_size=1)
 
     # 发布定位消息
-    _thread.start_new_thread(transform_fusion, ())
+    # _thread.start_new_thread(transform_fusion, ())
 
     rospy.spin()
