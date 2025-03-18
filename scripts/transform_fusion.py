@@ -16,6 +16,9 @@ from nav_msgs.msg import Odometry
 cur_odom_to_baselink = None
 cur_map_to_odom = None
 
+# 记录上一次发布的位姿，用于判断位姿变化情况
+latest_pub_pose = None
+
 
 def pose_to_mat(pose_msg):
     return np.matmul(
@@ -92,6 +95,19 @@ def cb_save_cur_odom(odom_msg):
         localization.child_frame_id = 'body'
         # rospy.loginfo_throttle(1, '{}'.format(np.matmul(T_map_to_odom, T_odom_to_base_link)))
         pub_localization.publish(localization)
+
+        global latest_pub_pose
+        if latest_pub_pose is not None:
+            latest_xyz = tf.transformations.translation_from_matrix(latest_pub_pose)
+            latest_quat = tf.transformations.quaternion_from_matrix(latest_pub_pose)
+            # 计算平移偏差
+            xyz_diff = np.linalg.norm(np.array(latest_xyz) - np.array(xyz))
+            if xyz_diff > 0.15 :
+                rospy.logwarn('Position change too large!(> 0.15m)')
+                # 输出当前位姿与上一次位姿
+                rospy.logwarn('pre: {}'.format(latest_xyz))
+                rospy.logwarn('cur: {}'.format(xyz))
+        latest_pub_pose = T_map_to_base_link
 
 
 

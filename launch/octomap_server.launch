@@ -21,7 +21,7 @@
 		<param name="use_fixed_height_color" value="true"/>
 		<param name="height_color_min_z" value="0" />
 		<param name="height_color_max_z" value="5" />
-		<param name="color_alpha" value="0.7"/>
+		<param name="color_alpha" value="0.6"/>
 
 		<param name="visual_near" value="true"/>
 		<param name="near_x_range" value="10.0" />

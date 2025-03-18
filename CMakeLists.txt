@@ -90,3 +90,7 @@ target_include_directories(fastlio_mapping PRIVATE ${PYTHON_INCLUDE_DIRS})
 
 add_executable(test_3d_to_2d src/test_3d_to_2d.cpp src/utils/file_writer.cpp)
 target_link_libraries(test_3d_to_2d ${PCL_LIBRARIES})
+
+add_executable(fastlio_relocalization src/laserMapping_re.cpp include/ikd-Tree/ikd_Tree.cpp src/preprocess.cpp src/utils/file_writer.cpp)
+target_link_libraries(fastlio_relocalization ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${PYTHON_LIBRARIES})
+target_include_directories(fastlio_relocalization PRIVATE ${PYTHON_INCLUDE_DIRS})

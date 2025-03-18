@@ -14,7 +14,7 @@ typedef pcl::PointCloud<PointType> PointCloudType;
 
 class PointCloud3DTo2DGrid {
 public:
-    void Convert(std::shared_ptr<PointCloudType> cloud, const std::string& output_dir, const std::string& prefix,
+    void Convert(PointCloudType::Ptr cloud, const std::string& output_dir, const std::string& prefix,
                 float z_min = -10000, float z_max = 10000, float resolution = 0.05) {
         // 给定需要保留的z值范围[zmin, zmax]，取该范围内的点云，以及 xy范围
         pcl::PointCloud<PointType> cloud_filtered;
