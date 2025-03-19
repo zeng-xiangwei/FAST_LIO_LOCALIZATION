@@ -97,6 +97,7 @@ bool   point_selected_surf[100000] = {0};
 bool   lidar_pushed, flg_reset, flg_exit = false, flg_EKF_inited;
 bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
 bool output_car_body_pose_en = false;
+bool gravity_align_en = true, gravity_align_finished = false;
 
 vector<vector<int>>  pointSearchInd_surf; 
 vector<BoxPointType> cub_needrm;
@@ -788,6 +789,7 @@ int main(int argc, char** argv)
     nh.param<double>("mapping/acc_cov",acc_cov,0.1);
     nh.param<double>("mapping/b_gyr_cov",b_gyr_cov,0.0001);
     nh.param<double>("mapping/b_acc_cov",b_acc_cov,0.0001);
+    nh.param<bool>("mapping/gravity_align_en", gravity_align_en, true);
     nh.param<double>("preprocess/blind", p_pre->blind, 0.01);
     nh.param<double>("preprocess/max_range",p_pre->max_scan_range, 100.f);
     nh.param<int>("preprocess/lidar_type", p_pre->lidar_type, AVIA);
@@ -901,6 +903,29 @@ int main(int argc, char** argv)
             t0 = omp_get_wtime();
 
             p_imu->Process(Measures, kf, feats_undistort);
+
+            if (gravity_align_en) 
+            {
+                if (!p_imu->get_imu_need_init() && !gravity_align_finished) 
+                {
+                    ROS_INFO("Gravity Alignment Starts");
+                    state_point = kf.get_x();
+                    V3D ez(0, 0, -1), gz(state_point.grav.vec);
+                    std::cout << "gravity in I0: " << state_point.grav.vec.transpose() << std::endl;
+                    Quaterniond G_q_I0 = Quaterniond::FromTwoVectors(gz, ez);
+                    M3D G_R_I0 = G_q_I0.toRotationMatrix();
+                    std::cout << "G_R_I0: \n" << G_R_I0 << std::endl;
+                    std::cout << "pos0: " << state_point.pos.transpose() << std::endl;
+                    state_point.pos = G_R_I0 * state_point.pos;
+                    state_point.rot = G_R_I0 * state_point.rot;
+                    state_point.vel = G_R_I0 * state_point.vel;
+                    state_point.grav = G_R_I0 * state_point.grav;
+                    gravity_align_finished = true;
+                    kf.change_x(state_point);
+                    ROS_INFO("Gravity Alignment Finished");
+                }
+            }
+
             state_point = kf.get_x();
             pos_lid = state_point.pos + state_point.rot * state_point.offset_T_L_I;
 
