@@ -977,7 +977,9 @@ int main(int argc, char** argv)
             }
 
             lidar_data = lidar_buffer.front();
-            lidar_buffer.pop_front();
+            // 初始化时要清空缓存数据，避免初始化等待时间过长导致缓存数据过多
+            lidar_buffer.clear();
+            imu_buffer.clear();
         }
 
         // 进行icp匹配
