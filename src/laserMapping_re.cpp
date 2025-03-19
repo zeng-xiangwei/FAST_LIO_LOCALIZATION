@@ -300,6 +300,7 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
     {
         ROS_ERROR("lidar loop back, clear buffer");
         lidar_buffer.clear();
+        time_buffer.clear();
     }
 
     PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
@@ -323,6 +324,7 @@ void livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr &msg)
     {
         ROS_ERROR("lidar loop back, clear buffer");
         lidar_buffer.clear();
+        time_buffer.clear();
     }
     last_timestamp_lidar = msg->header.stamp.toSec();
     
@@ -390,6 +392,7 @@ bool sync_packages(MeasureGroup &meas)
         if(meas.lidar->points.size() <= 1)
         {
             lidar_buffer.pop_front();
+            time_buffer.pop_front();
             return false;
         }
         meas.lidar_beg_time = time_buffer.front();
@@ -819,7 +822,14 @@ int main(int argc, char** argv)
     nh.param<double>("preprocess/max_range",p_pre->max_scan_range, 100.f);
     nh.param<int>("preprocess/lidar_type", p_pre->lidar_type, AVIA);
     nh.param<int>("preprocess/scan_line", p_pre->N_SCANS, 16);
-    nh.param<bool>("preprocess/only_use_high_conf", p_pre->only_use_high_confidenc_point, true);
+    nh.param<bool>("preprocess/only_use_high_conf", p_pre->only_use_high_confidenc_point, false);
+    nh.param<bool>("preprocess/filter_specitail_cloud", p_pre->filter_specitail_cloud, false);
+    nh.param<float>("preprocess/filter_x_min", p_pre->filter_x_min, 0);
+    nh.param<float>("preprocess/filter_x_max", p_pre->filter_x_max, 0);
+    nh.param<float>("preprocess/filter_y_min", p_pre->filter_y_min, 0);
+    nh.param<float>("preprocess/filter_y_max", p_pre->filter_y_max, 0);
+    nh.param<float>("preprocess/filter_z_min", p_pre->filter_z_min, 0);
+    nh.param<float>("preprocess/filter_z_max", p_pre->filter_z_max, 0);
     nh.param<int>("point_filter_num", p_pre->point_filter_num, 2);
     nh.param<bool>("feature_extract_enable", p_pre->feature_enabled, 0);
     nh.param<bool>("runtime_pos_log_enable", runtime_pos_log, 0);
@@ -953,6 +963,10 @@ int main(int argc, char** argv)
         {
             std::lock_guard<std::mutex> lock(mtx_buffer);
             if (initial_pose_msg == nullptr) {
+                // 初始化时要清空缓存数据，避免初始化等待时间过长导致缓存数据过多
+                lidar_buffer.clear();
+                time_buffer.clear();
+                imu_buffer.clear();
                 continue;
             }
             ROS_INFO("Get initial pose!");
@@ -976,10 +990,11 @@ int main(int argc, char** argv)
                 continue;
             }
 
-            lidar_data = lidar_buffer.front();
-            // 初始化时要清空缓存数据，避免初始化等待时间过长导致缓存数据过多
-            lidar_buffer.clear();
-            imu_buffer.clear();
+            lidar_data = lidar_buffer.back();
+            while (lidar_buffer.size() != 1) {
+                lidar_buffer.pop_front();
+                time_buffer.pop_front();
+            }
         }
 
         // 进行icp匹配

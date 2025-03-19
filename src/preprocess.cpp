@@ -3,6 +3,12 @@
 #define RETURN0     0x00
 #define RETURN0AND1 0x10
 
+
+namespace {
+  bool InRange(float value, float min, float max) {
+    return (value >= min && value <= max);
+  }
+}
 Preprocess::Preprocess()
   :feature_enabled(0), lidar_type(AVIA), blind(0.01), point_filter_num(1)
 {
@@ -148,6 +154,13 @@ void Preprocess::avia_handler(const livox_ros_driver::CustomMsg::ConstPtr &msg)
         valid_num ++;
         if (valid_num % point_filter_num == 0)
         {
+          if (filter_specitail_cloud) {
+            if (InRange(msg->points[i].x, filter_x_min, filter_x_max) &&
+                InRange(msg->points[i].y, filter_y_min, filter_y_max) &&
+                InRange(msg->points[i].z, filter_z_min, filter_z_max)) {
+                  continue;
+            }
+          }
           pl_full[i].x = msg->points[i].x;
           pl_full[i].y = msg->points[i].y;
           pl_full[i].z = msg->points[i].z;

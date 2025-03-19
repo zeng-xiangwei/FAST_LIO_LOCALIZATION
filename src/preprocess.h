@@ -99,6 +99,8 @@ class Preprocess
   double max_scan_range;
   bool feature_enabled, given_offset_time;
   bool only_use_high_confidenc_point;
+  bool filter_specitail_cloud;
+  float filter_x_min, filter_x_max, filter_y_min, filter_y_max, filter_z_min, filter_z_max;
   ros::Publisher pub_full, pub_surf, pub_corn;
     
 
