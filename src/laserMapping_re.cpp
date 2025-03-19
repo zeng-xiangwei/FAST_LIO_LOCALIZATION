@@ -756,9 +756,12 @@ bool match_with_global_map(PointCloudXYZI::Ptr source_cloud, Eigen::Matrix4f& tr
     downSizeFilterSurf.setInputCloud(source_cloud);
     downSizeFilterSurf.filter(*downsampled_source_cloud);
 
+    // 根据初始位姿变化一下点云
+    pcl::transformPointCloud(*downsampled_source_cloud, *downsampled_source_cloud, transform_global_local);
+
     std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
     pcl::IterativeClosestPoint<PointType, PointType> icp;
-    icp.setMaxCorrespondenceDistance(100);
+    icp.setMaxCorrespondenceDistance(5);
     icp.setMaximumIterations(100);
     icp.setTransformationEpsilon(1e-6);
     icp.setEuclideanFitnessEpsilon(1e-6);
@@ -776,7 +779,7 @@ bool match_with_global_map(PointCloudXYZI::Ptr source_cloud, Eigen::Matrix4f& tr
         return false;
     }
 
-    transform_global_local = icp.getFinalTransformation();
+    transform_global_local = icp.getFinalTransformation() * transform_global_local;
     return true;
 }
 
@@ -979,7 +982,9 @@ int main(int argc, char** argv)
 
         // 进行icp匹配
         double icp_score = 0;
-        Eigen::Matrix4f transform_global_local;
+        Eigen::Matrix4f transform_global_local = Eigen::Matrix4f::Identity();
+        transform_global_local.topRightCorner(3, 1) = init_pos.cast<float>();
+        transform_global_local.topLeftCorner(3, 3) = init_rot.toRotationMatrix().cast<float>();
         if (match_with_global_map(lidar_data, transform_global_local, icp_score)) {
             accurate_init_translation = transform_global_local.topRightCorner(3, 1).cast<double>();
             Eigen::Matrix3d rotation = transform_global_local.topLeftCorner(3, 3).cast<double>();

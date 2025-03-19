@@ -5,6 +5,7 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
+        - /Grid1
         - /localization1
         - /localization1/global_map1
         - /localization1/currPoint1
@@ -42,7 +43,7 @@ Visualization Manager:
   Class: ""
   Displays:
     - Alpha: 1
-      Cell Size: 1000
+      Cell Size: 1
       Class: rviz/Grid
       Color: 160; 160; 164
       Enabled: false
@@ -338,9 +339,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.3297966718673706
+      Pitch: 0.60479736328125
       Target Frame: <Fixed Frame>
-      Yaw: 5.377223491668701
+      Yaw: 5.867228984832764
     Saved: ~
 Window Geometry:
   Displays:
