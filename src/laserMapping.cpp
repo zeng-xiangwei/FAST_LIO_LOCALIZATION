@@ -228,6 +228,18 @@ void RGBpointBodyLidarToIMU(PointType const * const pi, PointType * const po)
     po->intensity = pi->intensity;
 }
 
+void RGBpointBodyLidarToCarControlCenter(PointType const * const pi, PointType * const po)
+{
+    V3D p_body_lidar(pi->x, pi->y, pi->z);
+    
+    V3D p_carbody(rotation_carbody_lidar * p_body_lidar + translation_carbody_lidar);
+
+    po->x = p_carbody(0);
+    po->y = p_carbody(1);
+    po->z = p_carbody(2);
+    po->intensity = pi->intensity;
+}
+
 void points_cache_collect()
 {
     PointVector points_history;
@@ -529,8 +541,13 @@ void publish_frame_body(const ros::Publisher & pubLaserCloudFull_body)
 
     for (int i = 0; i < size; i++)
     {
-        RGBpointBodyLidarToIMU(&feats_undistort->points[i], \
+        if (output_car_body_pose_en) {
+            RGBpointBodyLidarToCarControlCenter(&feats_undistort->points[i], \
                             &laserCloudIMUBody->points[i]);
+        } else {
+            RGBpointBodyLidarToIMU(&feats_undistort->points[i], \
+                            &laserCloudIMUBody->points[i]);
+        }
     }
 
     sensor_msgs::PointCloud2 laserCloudmsg;
@@ -579,8 +596,7 @@ void set_posestamp(T & out)
     
 }
 
-template<typename T>
-void set_poses_on_body_frame(T & out)
+Eigen::Isometry3d get_car_body_pose() 
 {
     Eigen::Isometry3d T_w_imu;
     T_w_imu.translation() = state_point.pos;
@@ -588,13 +604,20 @@ void set_poses_on_body_frame(T & out)
 
     Eigen::Isometry3d T_imu_lidar;
     T_imu_lidar.translation() = state_point.offset_T_L_I;
-    T_imu_lidar.linear() = state_point.rot.toRotationMatrix();
+    T_imu_lidar.linear() = state_point.offset_R_L_I.toRotationMatrix();
 
     Eigen::Isometry3d T_body_lidar;
     T_body_lidar.translation() = translation_carbody_lidar;
-    T_body_lidar.linear() = state_point.rot.toRotationMatrix();
+    T_body_lidar.linear() = rotation_carbody_lidar;
 
     Eigen::Isometry3d T_w_body = T_w_imu * T_imu_lidar * T_body_lidar.inverse();
+    return T_w_body;
+}
+
+template<typename T>
+void set_poses_on_body_frame(T & out)
+{
+    Eigen::Isometry3d T_w_body = get_car_body_pose();
     out.pose.position.x = T_w_body.translation().x();
     out.pose.position.y = T_w_body.translation().y();
     out.pose.position.z = T_w_body.translation().z();
@@ -603,7 +626,6 @@ void set_poses_on_body_frame(T & out)
     out.pose.orientation.y = q_w_body.y();
     out.pose.orientation.z = q_w_body.z();
     out.pose.orientation.w = q_w_body.w();
-    
 }
 
 void publish_odometry(const ros::Publisher & pubOdomAftMapped)

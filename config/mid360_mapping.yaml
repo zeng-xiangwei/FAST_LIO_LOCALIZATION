@@ -40,6 +40,16 @@ publish:
     dense_publish_en: true       # false: low down the points number in a global-frame point clouds scan.
     scan_bodyframe_pub_en: true  # true: output the point cloud scans in IMU-body-frame
 
+    # 对于定位阶段有用
+    # true: 输出车体位姿（也就是轮速计坐标系的位姿？），
+    # 同时该变量会影响scan_bodyframe_pub_en输出点云，该变量为true，则输出车体系的点云，否则输出imu系的
+    output_car_body_pose_en: true
+    # T^{carbody}_{lidar}
+    extrinsic_carbody_lidar_T: [ 0, 0, 0 ]
+    extrinsic_carbody_lidar_R: [ 1, 0, 0,
+                   0, 1, 0,
+                   0, 0, 1]
+
 pcd_save:
     pcd_save_en: true
     interval: 100                 # how many LiDAR frames saved in each pcd file; 

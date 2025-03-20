@@ -35,7 +35,7 @@ publish:
     path_en:  true
     scan_publish_en:  true       # false: close all the point cloud output
     dense_publish_en: true       # false: low down the points number in a global-frame point clouds scan.
-    scan_bodyframe_pub_en: false  # true: output the point cloud scans in IMU-body-frame
+    scan_bodyframe_pub_en: true  # true: output the point cloud scans in IMU-body-frame
 
     # 对于定位阶段有用
     output_car_body_pose_en: true # true: 输出车体位姿（也就是轮速计坐标系的位姿？）
