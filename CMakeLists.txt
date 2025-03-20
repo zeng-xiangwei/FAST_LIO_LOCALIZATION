@@ -54,6 +54,7 @@ find_package(catkin REQUIRED COMPONENTS
   livox_ros_driver
   message_generation
   eigen_conversions
+  localization_msgs
 )
 
 find_package(Eigen3 REQUIRED)

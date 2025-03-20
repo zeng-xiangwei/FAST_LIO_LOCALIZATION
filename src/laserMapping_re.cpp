@@ -63,6 +63,13 @@
 #include <ikd-Tree/ikd_Tree.h>
 #include "utils/point_cloud_3d_to_2d_grid.h"
 
+#define PUB_CUSTOM_LOCALIZATION
+
+#ifdef PUB_CUSTOM_LOCALIZATION
+#include "localization_msgs/localization_msg.h"
+ros::Publisher pubPureLocalization;
+#endif
+
 #define INIT_TIME           (0.1)
 #define LASER_POINT_COV     (0.001)
 #define MAXN                (720000)
@@ -615,6 +622,16 @@ void publish_odometry(const ros::Publisher & pubOdomAftMapped)
         set_posestamp(odomAftMapped.pose);
     }
     pubOdomAftMapped.publish(odomAftMapped);
+
+    #ifdef PUB_CUSTOM_LOCALIZATION
+    localization_msgs::localization_msg custom_loc_msg;
+    custom_loc_msg.header = odomAftMapped.header;
+    custom_loc_msg.confidence = 1.0;
+    custom_loc_msg.valid_flag = 1;
+    custom_loc_msg.pose = odomAftMapped.pose.pose;
+    pubPureLocalization.publish(custom_loc_msg);
+    #endif
+
     auto P = kf.get_P();
     for (int i = 0; i < 6; i ++)
     {
@@ -939,6 +956,12 @@ int main(int argc, char** argv)
             ("/Laser_map", 100000);
     ros::Publisher pubOdomAftMapped = nh.advertise<nav_msgs::Odometry> 
             ("/localization", 100000);
+
+    #ifdef PUB_CUSTOM_LOCALIZATION
+    pubPureLocalization = nh.advertise<localization_msgs::localization_msg> 
+            ("/pure_localization", 100000);
+    #endif
+
     ros::Publisher pubPath          = nh.advertise<nav_msgs::Path> 
             ("/path", 100000);
     ros::Publisher pubGlobalMap = nh.advertise<sensor_msgs::PointCloud2>
@@ -986,8 +1009,10 @@ int main(int argc, char** argv)
             std::lock_guard<std::mutex> lock(mtx_buffer);
             if (initial_pose_msg == nullptr) {
                 // 初始化时要清空缓存数据，避免初始化等待时间过长导致缓存数据过多
-                lidar_buffer.clear();
-                time_buffer.clear();
+                while (!lidar_buffer.empty() && lidar_buffer.size() != 1) {
+                    lidar_buffer.pop_front();
+                    time_buffer.pop_front();
+                }
                 imu_buffer.clear();
                 continue;
             }

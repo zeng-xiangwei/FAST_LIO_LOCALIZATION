@@ -41,6 +41,7 @@ publish:
     output_car_body_pose_en: true # true: 输出车体位姿（也就是轮速计坐标系的位姿？）
     # T^{carbody}_{lidar}
     extrinsic_carbody_lidar_T: [ 0, 0, 0 ]
+    # extrinsic_carbody_lidar_T: [ 0.37, 0, 0 ]
     extrinsic_carbody_lidar_R: [ 1, 0, 0,
                    0, 1, 0,
                    0, 0, 1]
