@@ -80,7 +80,7 @@ double kdtree_incremental_time = 0.0, kdtree_search_time = 0.0, kdtree_delete_ti
 double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot4[MAXN], s_plot5[MAXN], s_plot6[MAXN], s_plot7[MAXN], s_plot8[MAXN], s_plot9[MAXN], s_plot10[MAXN], s_plot11[MAXN];
 double match_time = 0, solve_time = 0, solve_const_H_time = 0;
 int    kdtree_size_st = 0, kdtree_size_end = 0, add_point_size = 0, kdtree_delete_counter = 0;
-bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false;
+bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false, extrinsic_est_en = false;
 int pcd_save_interval = -1, pcd_index = 0, pcd_skip_num = 4;
 float grid_2d_z_min = -0.2, grid_2d_z_max = 0.5, grid_2d_resolution = 0.05;
 /**************************/
@@ -769,8 +769,15 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         /*** calculate the Measuremnt Jacobian matrix H ***/
         V3D C(s.rot.conjugate() *norm_vec);
         V3D A(point_crossmat * C);
-        V3D B(point_be_crossmat * s.offset_R_L_I.conjugate() * C); //s.rot.conjugate()*norm_vec);
-        ekfom_data.h_x.block<1, 12>(i,0) << norm_p.x, norm_p.y, norm_p.z, VEC_FROM_ARRAY(A), VEC_FROM_ARRAY(B), VEC_FROM_ARRAY(C);
+        if (extrinsic_est_en)
+        {
+            V3D B(point_be_crossmat * s.offset_R_L_I.conjugate() * C); //s.rot.conjugate()*norm_vec);
+            ekfom_data.h_x.block<1, 12>(i,0) << norm_p.x, norm_p.y, norm_p.z, VEC_FROM_ARRAY(A), VEC_FROM_ARRAY(B), VEC_FROM_ARRAY(C);
+        }
+        else
+        {
+            ekfom_data.h_x.block<1, 12>(i,0) << norm_p.x, norm_p.y, norm_p.z, VEC_FROM_ARRAY(A), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+        }
 
         /*** Measuremnt: distance to the closest surface/corner ***/
         ekfom_data.h(i) = -norm_p.intensity;
@@ -877,6 +884,7 @@ int main(int argc, char** argv)
     nh.param<int>("pcd_save/skip_num", pcd_skip_num, 4);
     nh.param<vector<double>>("mapping/extrinsic_T", extrinT, vector<double>());
     nh.param<vector<double>>("mapping/extrinsic_R", extrinR, vector<double>());
+    nh.param<bool>("mapping/extrinsic_est_en", extrinsic_est_en, false);
     nh.param<float>("pcd_save/grid_2d_z_min", grid_2d_z_min, -0.2);
     nh.param<float>("pcd_save/grid_2d_z_max", grid_2d_z_max, 0.5);
     nh.param<float>("pcd_save/grid_2d_resolution", grid_2d_resolution, 0.05);
@@ -920,7 +928,7 @@ int main(int argc, char** argv)
     p_imu->set_acc_bias_cov(V3D(b_acc_cov, b_acc_cov, b_acc_cov));
 
     translation_carbody_lidar << VEC_FROM_ARRAY(extrin_carbody_lidar_t);
-    rotation_carbody_lidar << MAT_FROM_ARRAY(extrin_carbody_lidar_t);
+    rotation_carbody_lidar << MAT_FROM_ARRAY(extrin_carbody_lidar_r);
 
     double epsi[23] = {0.001};
     fill(epsi, epsi+23, 0.001);
