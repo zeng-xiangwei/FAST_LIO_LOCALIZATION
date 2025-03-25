@@ -107,6 +107,7 @@ bool   point_selected_surf[100000] = {0};
 bool   lidar_pushed, flg_reset, flg_exit = false, flg_EKF_inited;
 bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
 bool output_car_body_pose_en = false;
+double filter_visual_global_map = 0;
 
 vector<vector<int>>  pointSearchInd_surf; 
 vector<BoxPointType> cub_needrm;
@@ -888,6 +889,7 @@ int main(int argc, char** argv)
     nh.param<float>("pcd_save/grid_2d_z_min", grid_2d_z_min, -0.2);
     nh.param<float>("pcd_save/grid_2d_z_max", grid_2d_z_max, 0.5);
     nh.param<float>("pcd_save/grid_2d_resolution", grid_2d_resolution, 0.05);
+    nh.param<double>("filter_visual_global_map", filter_visual_global_map, 0.1);
     cout<<"p_pre->lidar_type "<<p_pre->lidar_type<<endl;
 
     std::string global_map_path;
@@ -985,7 +987,7 @@ int main(int argc, char** argv)
     pcl::io::loadPCDFile(global_map_path, *global_map_cloud);
 
     pcl::VoxelGrid<PointType> visual_global_map_filter;
-    visual_global_map_filter.setLeafSize(0.02, 0.02, 0.02);
+    visual_global_map_filter.setLeafSize(filter_visual_global_map, filter_visual_global_map, filter_visual_global_map);
     visual_global_map_filter.setInputCloud(global_map_cloud);
     visual_global_map_filter.filter(*downsampled_global_map_cloud);
     pcl::toROSMsg(*downsampled_global_map_cloud, global_map_cloud_msg);
