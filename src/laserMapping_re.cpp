@@ -826,6 +826,7 @@ bool match_with_global_map(PointCloudXYZI::Ptr source_cloud, Eigen::Matrix4f& tr
     double cost_time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count();
     ROS_INFO("icp cost time: %f s", cost_time);
     if (icp.hasConverged() == false || score > 0.3) {
+        ROS_WARN("icp match bad, please check your initial pose");
         return false;
     }
 
