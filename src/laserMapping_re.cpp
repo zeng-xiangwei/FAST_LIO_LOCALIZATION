@@ -89,7 +89,7 @@ float res_last[100000] = {0.0};
 float DET_RANGE = 300.0f;
 const float MOV_THRESHOLD = 1.5f;
 
-mutex mtx_buffer;
+mutex mtx_buffer, mtx_buffer_imu_prop;
 condition_variable sig_buffer;
 
 string root_dir = ROOT_DIR;
@@ -108,6 +108,8 @@ bool   lidar_pushed, flg_reset, flg_exit = false, flg_EKF_inited;
 bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
 bool output_car_body_pose_en = false;
 double filter_visual_global_map = 0;
+bool imu_prop_enable = true;
+bool ekf_finish_once = false, state_update_flg = false;
 
 vector<vector<int>>  pointSearchInd_surf; 
 vector<BoxPointType> cub_needrm;
@@ -120,6 +122,10 @@ vector<double>       extrin_carbody_lidar_r(9, 0.0);
 deque<double>                     time_buffer;
 deque<PointCloudXYZI::Ptr>        lidar_buffer;
 deque<sensor_msgs::Imu::ConstPtr> imu_buffer;
+deque<sensor_msgs::Imu> prop_imu_buffer;
+sensor_msgs::Imu newest_imu;
+bool new_imu = false;
+double latest_ekf_time = 0;
 
 PointCloudXYZI::Ptr featsFromMap(new PointCloudXYZI());
 PointCloudXYZI::Ptr feats_undistort(new PointCloudXYZI());
@@ -153,6 +159,7 @@ M3D rotation_carbody_lidar(Eye3d);
 MeasureGroup Measures;
 esekfom::esekf<state_ikfom, 12, input_ikfom> kf;
 state_ikfom state_point;
+StatesGroup imu_propagate, latest_ekf_state;
 vect3 pos_lid;
 
 nav_msgs::Path path;
@@ -396,7 +403,129 @@ void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
 
     imu_buffer.push_back(msg);
     mtx_buffer.unlock();
+
+    {
+        std::lock_guard<std::mutex> lk(mtx_buffer_imu_prop);
+        if (imu_prop_enable)
+        {
+            if (imu_prop_enable && !p_imu->get_imu_need_init()) 
+            { 
+                prop_imu_buffer.push_back(*msg); 
+            }
+            newest_imu = *msg;
+            new_imu = true;
+        }
+    }
+
     sig_buffer.notify_all();
+}
+
+void prop_imu_once(StatesGroup &imu_prop_state, const double dt, V3D acc_avr, V3D angvel_avr)
+{
+  double mean_acc_norm = p_imu->get_mean_acc_norm();
+  acc_avr = acc_avr * G_m_s2 / mean_acc_norm - imu_prop_state.bias_a;
+  angvel_avr -= imu_prop_state.bias_g;
+
+  M3D Exp_f = Exp(angvel_avr, dt);
+  /* propogation of IMU attitude */
+  imu_prop_state.rot_end = imu_prop_state.rot_end * Exp_f;
+
+  /* Specific acceleration (global frame) of IMU */
+  V3D acc_imu = imu_prop_state.rot_end * acc_avr + V3D(imu_prop_state.gravity[0], imu_prop_state.gravity[1], imu_prop_state.gravity[2]);
+
+  /* propogation of IMU */
+  imu_prop_state.pos_end = imu_prop_state.pos_end + imu_prop_state.vel_end * dt + 0.5 * acc_imu * dt * dt;
+
+  /* velocity of IMU */
+  imu_prop_state.vel_end = imu_prop_state.vel_end + acc_imu * dt;
+}
+
+void imu_prop_callback(ros::WallTimerEvent e, const ros::Publisher& pubImuPropOdom)
+{
+  if (p_imu->get_imu_need_init() || !new_imu || !ekf_finish_once) { return; }
+
+  std::lock_guard<std::mutex> lk(mtx_buffer_imu_prop);
+  new_imu = false; // 控制propagate频率和IMU频率一致
+  if (imu_prop_enable && !prop_imu_buffer.empty())
+  {
+    static double last_t_from_lidar_end_time = 0;
+    if (state_update_flg)
+    {
+      imu_propagate = latest_ekf_state;
+      // drop all useless imu pkg
+      while ((!prop_imu_buffer.empty() && prop_imu_buffer.front().header.stamp.toSec() < latest_ekf_time))
+      {
+        prop_imu_buffer.pop_front();
+      }
+      last_t_from_lidar_end_time = 0;
+      for (int i = 0; i < prop_imu_buffer.size(); i++)
+      {
+        double t_from_lidar_end_time = prop_imu_buffer[i].header.stamp.toSec() - latest_ekf_time;
+        double dt = t_from_lidar_end_time - last_t_from_lidar_end_time;
+        // cout << "prop dt" << dt << ", " << t_from_lidar_end_time << ", " << last_t_from_lidar_end_time << endl;
+        V3D acc_imu(prop_imu_buffer[i].linear_acceleration.x, prop_imu_buffer[i].linear_acceleration.y, prop_imu_buffer[i].linear_acceleration.z);
+        V3D omg_imu(prop_imu_buffer[i].angular_velocity.x, prop_imu_buffer[i].angular_velocity.y, prop_imu_buffer[i].angular_velocity.z);
+        prop_imu_once(imu_propagate, dt, acc_imu, omg_imu);
+        last_t_from_lidar_end_time = t_from_lidar_end_time;
+      }
+      state_update_flg = false;
+    }
+    else
+    {
+      V3D acc_imu(newest_imu.linear_acceleration.x, newest_imu.linear_acceleration.y, newest_imu.linear_acceleration.z);
+      V3D omg_imu(newest_imu.angular_velocity.x, newest_imu.angular_velocity.y, newest_imu.angular_velocity.z);
+      double t_from_lidar_end_time = newest_imu.header.stamp.toSec() - latest_ekf_time;
+      double dt = t_from_lidar_end_time - last_t_from_lidar_end_time;
+      prop_imu_once(imu_propagate, dt, acc_imu, omg_imu);
+      last_t_from_lidar_end_time = t_from_lidar_end_time;
+    }
+
+    V3D posi, vel_i;
+    Eigen::Quaterniond q;
+    posi = imu_propagate.pos_end;
+    vel_i = imu_propagate.vel_end;
+    q = Eigen::Quaterniond(imu_propagate.rot_end);
+    nav_msgs::Odometry imu_prop_odom;
+
+    imu_prop_odom.header.frame_id = parent_frame_id;
+    imu_prop_odom.header.stamp = newest_imu.header.stamp;
+
+    if (output_car_body_pose_en) {
+        Eigen::Isometry3d T_w_imu;
+        T_w_imu.translation() = posi;
+        T_w_imu.linear() = q.toRotationMatrix();
+
+        Eigen::Isometry3d T_imu_lidar;
+        T_imu_lidar.translation() = state_point.offset_T_L_I;
+        T_imu_lidar.linear() = state_point.offset_R_L_I.toRotationMatrix();
+
+        Eigen::Isometry3d T_body_lidar;
+        T_body_lidar.translation() = translation_carbody_lidar;
+        T_body_lidar.linear() = rotation_carbody_lidar;
+
+        Eigen::Isometry3d T_w_body = T_w_imu * T_imu_lidar * T_body_lidar.inverse();
+        imu_prop_odom.pose.pose.position.x = T_w_body.translation().x();
+        imu_prop_odom.pose.pose.position.y = T_w_body.translation().y();
+        imu_prop_odom.pose.pose.position.z = T_w_body.translation().z();
+        Eigen::Quaterniond q_w_body(T_w_body.linear());
+        imu_prop_odom.pose.pose.orientation.x = q_w_body.x();
+        imu_prop_odom.pose.pose.orientation.y = q_w_body.y();
+        imu_prop_odom.pose.pose.orientation.z = q_w_body.z();
+        imu_prop_odom.pose.pose.orientation.w = q_w_body.w();
+    } else {
+        imu_prop_odom.pose.pose.position.x = posi.x();
+        imu_prop_odom.pose.pose.position.y = posi.y();
+        imu_prop_odom.pose.pose.position.z = posi.z();
+        imu_prop_odom.pose.pose.orientation.w = q.w();
+        imu_prop_odom.pose.pose.orientation.x = q.x();
+        imu_prop_odom.pose.pose.orientation.y = q.y();
+        imu_prop_odom.pose.pose.orientation.z = q.z();
+        imu_prop_odom.twist.twist.linear.x = vel_i.x();
+        imu_prop_odom.twist.twist.linear.y = vel_i.y();
+        imu_prop_odom.twist.twist.linear.z = vel_i.z();
+    }
+    pubImuPropOdom.publish(imu_prop_odom);
+  }
 }
 
 bool sync_packages(MeasureGroup &meas)
@@ -840,6 +969,18 @@ void initial_pose_callback(const geometry_msgs::PoseWithCovarianceStamped::Const
     initial_pose_msg = std::make_shared<geometry_msgs::PoseWithCovarianceStamped>(*msg);
 }
 
+StatesGroup state_ikfom_to_states_group(const state_ikfom& state_point)
+{
+    StatesGroup result;
+    result.pos_end = Eigen::Vector3d(state_point.pos(0), state_point.pos(1), state_point.pos(2));
+    result.rot_end = Eigen::Quaterniond(state_point.rot.toRotationMatrix());
+    result.vel_end = Eigen::Vector3d(state_point.vel(0), state_point.vel(1), state_point.vel(2));
+    result.gravity = Eigen::Vector3d(state_point.grav.vec(0), state_point.grav.vec(1), state_point.grav.vec(2));
+    result.bias_a = Eigen::Vector3d(state_point.bg(0), state_point.bg(1), state_point.bg(2));
+    result.bias_g = Eigen::Vector3d(state_point.bg(0), state_point.bg(1), state_point.bg(2));
+    return result;
+}
+
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "laserMapping");
@@ -851,6 +992,7 @@ int main(int argc, char** argv)
     nh.param<bool>("publish/output_car_body_pose_en",output_car_body_pose_en,0);
     nh.param<vector<double>>("publish/extrinsic_carbody_lidar_T", extrin_carbody_lidar_t, vector<double>());
     nh.param<vector<double>>("publish/extrinsic_carbody_lidar_R", extrin_carbody_lidar_r, vector<double>());
+    nh.param<bool>("publish/imu_prop_enable", imu_prop_enable, false);
     nh.param<int>("max_iteration",NUM_MAX_ITERATIONS,4);
     nh.param<string>("map_file_path",map_file_path,"");
     nh.param<string>("common/lid_topic",lid_topic,"/livox/lidar");
@@ -967,6 +1109,8 @@ int main(int argc, char** argv)
             ("/Laser_map", 100000);
     ros::Publisher pubOdomAftMapped = nh.advertise<nav_msgs::Odometry> 
             ("/localization", 100000);
+    ros::Publisher pubImuPropagate = nh.advertise<nav_msgs::Odometry> 
+            ("/imu_propagate", 100000);
 
     #ifdef PUB_CUSTOM_LOCALIZATION
     pubPureLocalization = nh.advertise<localization_msgs::localization_msg> 
@@ -980,6 +1124,8 @@ int main(int argc, char** argv)
 
     ros::WallTimer global_map_timer = nh.createWallTimer(ros::WallDuration(global_map_pub_duration), 
         std::bind(pub_global_map, std::placeholders::_1, pubGlobalMap));
+    ros::WallTimer imu_propagate_timer = nh.createWallTimer(ros::WallDuration(0.004), 
+        std::bind(imu_prop_callback, std::placeholders::_1, pubImuPropagate));
 //------------------------------------------------------------------------------------------------------
     signal(SIGINT, SigHandle);
 
@@ -1171,6 +1317,15 @@ int main(int argc, char** argv)
 
             /******* Publish odometry *******/
             publish_odometry(pubOdomAftMapped);
+
+            // 更新状态，用于imu传播
+            if (imu_prop_enable) 
+            {
+                ekf_finish_once = true;
+                latest_ekf_state = state_ikfom_to_states_group(state_point);
+                latest_ekf_time = lidar_end_time;
+                state_update_flg = true;
+            }
 
             /*** add the feature points to map kdtree ***/
             t3 = omp_get_wtime();

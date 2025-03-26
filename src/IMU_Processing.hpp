@@ -51,7 +51,8 @@ class ImuProcess
   bool get_imu_need_init() {return imu_need_init_;}
   Eigen::Matrix<double, 12, 12> Q;
   void Process(const MeasureGroup &meas,  esekfom::esekf<state_ikfom, 12, input_ikfom> &kf_state, PointCloudXYZI::Ptr pcl_un_);
-
+  double get_mean_acc_norm() {return mean_acc.norm();}
+  
   ofstream fout_imu;
   V3D cov_acc;
   V3D cov_gyr;
