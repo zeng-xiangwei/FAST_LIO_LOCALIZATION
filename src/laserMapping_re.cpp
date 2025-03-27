@@ -441,10 +441,9 @@ void prop_imu_once(StatesGroup &imu_prop_state, const double dt, V3D acc_avr, V3
 }
 
 void imu_prop_callback(ros::WallTimerEvent e, const ros::Publisher& pubImuPropOdom)
-{
-  if (p_imu->get_imu_need_init() || !new_imu || !ekf_finish_once) { return; }
-
+{   
   std::lock_guard<std::mutex> lk(mtx_buffer_imu_prop);
+  if (p_imu->get_imu_need_init() || !new_imu || !ekf_finish_once) { return; }
   new_imu = false; // 控制propagate频率和IMU频率一致
   if (imu_prop_enable && !prop_imu_buffer.empty())
   {
@@ -524,6 +523,29 @@ void imu_prop_callback(ros::WallTimerEvent e, const ros::Publisher& pubImuPropOd
         imu_prop_odom.twist.twist.linear.y = vel_i.y();
         imu_prop_odom.twist.twist.linear.z = vel_i.z();
     }
+
+    #ifdef PUB_CUSTOM_LOCALIZATION
+    localization_msgs::localization_msg custom_loc_msg;
+    custom_loc_msg.header = imu_prop_odom.header;
+    custom_loc_msg.confidence = 1.0;
+    custom_loc_msg.valid_flag = 1;
+    custom_loc_msg.pose = imu_prop_odom.pose.pose;
+    pubPureLocalization.publish(custom_loc_msg);
+    #endif
+
+    static tf::TransformBroadcaster br;
+    tf::Transform                   transform;
+    tf::Quaternion                  q_tf;
+    transform.setOrigin(tf::Vector3(imu_prop_odom.pose.pose.position.x, \
+                                    imu_prop_odom.pose.pose.position.y, \
+                                    imu_prop_odom.pose.pose.position.z));
+    q_tf.setW(imu_prop_odom.pose.pose.orientation.w);
+    q_tf.setX(imu_prop_odom.pose.pose.orientation.x);
+    q_tf.setY(imu_prop_odom.pose.pose.orientation.y);
+    q_tf.setZ(imu_prop_odom.pose.pose.orientation.z);
+    transform.setRotation( q_tf );
+    br.sendTransform( tf::StampedTransform( transform, imu_prop_odom.header.stamp, parent_frame_id, "body" ) );
+
     pubImuPropOdom.publish(imu_prop_odom);
   }
 }
@@ -1109,8 +1131,6 @@ int main(int argc, char** argv)
             ("/Laser_map", 100000);
     ros::Publisher pubOdomAftMapped = nh.advertise<nav_msgs::Odometry> 
             ("/localization", 100000);
-    ros::Publisher pubImuPropagate = nh.advertise<nav_msgs::Odometry> 
-            ("/imu_propagate", 100000);
 
     #ifdef PUB_CUSTOM_LOCALIZATION
     pubPureLocalization = nh.advertise<localization_msgs::localization_msg> 
@@ -1125,7 +1145,7 @@ int main(int argc, char** argv)
     ros::WallTimer global_map_timer = nh.createWallTimer(ros::WallDuration(global_map_pub_duration), 
         std::bind(pub_global_map, std::placeholders::_1, pubGlobalMap));
     ros::WallTimer imu_propagate_timer = nh.createWallTimer(ros::WallDuration(0.004), 
-        std::bind(imu_prop_callback, std::placeholders::_1, pubImuPropagate));
+        std::bind(imu_prop_callback, std::placeholders::_1, pubOdomAftMapped));
 //------------------------------------------------------------------------------------------------------
     signal(SIGINT, SigHandle);
 
@@ -1316,7 +1336,10 @@ int main(int argc, char** argv)
             double t_update_end = omp_get_wtime();
 
             /******* Publish odometry *******/
-            publish_odometry(pubOdomAftMapped);
+            if (!imu_prop_enable) 
+            {
+                publish_odometry(pubOdomAftMapped);
+            }
 
             // 更新状态，用于imu传播
             if (imu_prop_enable) 
