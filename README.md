@@ -1,5 +1,7 @@
 # ubuntu 22下编译
+目前定位有2种方式，一种是替换掉fast-lio中的ikdtree中的地图，直接使用先验地图，不做地图的更新；另一种是fast-lio + icp 的方式，即 FAST-LIO-LOCALIZATION 中使用的方式，对于 FAST-LIO-LOCALIZATION，需要安装以下依赖。
 ## 安装依赖
+使用 fast-lio + icp 的方式需要，否则可以不安装以下依赖
 ### ros_numpy
 ```shell
 git clone https://github.com/eric-wieser/ros_numpy.git
@@ -16,6 +18,16 @@ open3d 需要用 1.x版本的numpy
 pip uninstall numpy
 pip install numpy==1.25.0
 ```
+## 使用
+```shell
+cd /path/to/catkin_ws
+source devel/setup.bash
+roslaunch fast_lio_localization localization_mid360_2.launch map:=/path/to/map.pcd
+```
+定位初始化时需要向 `/initialpose` 话题发布定位初值，粗略值即可，可以通过 `rviz` 的 `2D Pose Estimate` 发布
+
+## TODO
+- [ ] 大场景下采用九宫格的方式使用先验地图
 ---
 # FAST-LIO-LOCALIZATION
 
